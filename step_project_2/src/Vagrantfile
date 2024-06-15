@@ -1,0 +1,95 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+Vagrant.configure("2") do |config|
+  
+  # Jenkins Server
+  config.vm.define "jenkins_server" do |server|
+    server.vm.box = "ubuntu/jammy64"
+    server.vm.hostname = "jenkins-server"
+
+    server.vm.network "private_network", ip: "192.168.88.20", virtualbox__intnet: true
+    
+    server.vm.network "forwarded_port", guest: 8080, host: 8080
+
+    server.vm.provider "virtualbox" do |vb|
+      vb.gui = false
+      vb.name = "jenkins_server"
+    end
+  
+    server.vm.provision "shell", inline: <<-SHELL
+      sudo apt update -y && sudo apt upgrade -y
+      sudo apt install fontconfig openjdk-17-jre ca-certificates curl -y
+
+      for pkg in docker.io docker-doc docker-compose docker-compose-v2 podman-docker containerd runc; do sudo apt-get remove $pkg; done
+
+      sudo install -m 0755 -d /etc/apt/keyrings
+      sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+      sudo chmod a+r /etc/apt/keyrings/docker.asc
+
+      echo \
+          "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+          $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+          sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+      sudo apt-get update -y
+      sudo apt-get install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin -y
+
+      sudo systemctl enable docker
+
+      
+      sudo wget -O /usr/share/keyrings/jenkins-keyring.asc \
+      https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key
+      echo "deb [signed-by=/usr/share/keyrings/jenkins-keyring.asc]" \
+      https://pkg.jenkins.io/debian-stable binary/ | sudo tee \
+      /etc/apt/sources.list.d/jenkins.list > /dev/nul
+      sudo apt-get update -y
+
+      sudo apt-get install jenkins -y
+
+      sed -i 's|Environment="JAVA_OPTS=-Djava.awt.headless=true"|Environment="JAVA_OPTS=-Djava.awt.headless=true -Djava.net.preferIPv4Stack=true -Djava.net.preferIPv4Addresses=true"|' /lib/systemd/system/jenkins.service
+      sed -i 's|#Environment="JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64"|Environment="JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64"|' /lib/systemd/system/jenkins.service
+        
+      sudo systemctl daemon-reload
+      sudo systemctl enable jenkins
+      sudo systemctl start jenkins
+
+      sudo cat /var/lib/jenkins/secrets/initialAdminPassword > /vagrant/pass.txt
+
+    SHELL
+  end
+  
+  # Jenkins Worker
+  config.vm.define "jenkins_worker" do |worker|
+    worker.vm.box = "ubuntu/jammy64"
+    worker.vm.hostname = "jenkins-worker"
+
+    worker.vm.network "private_network", ip: "192.168.88.21", virtualbox__intnet: true
+  
+    worker.vm.provider "virtualbox" do |vb|
+      vb.gui = false
+      vb.name = "jenkins_worker"
+    end
+
+    worker.vm.provision "shell", inline: <<-SHELL
+      sudo apt update -y && sudo apt upgrade -y
+      sudo apt install fontconfig openjdk-17-jre ca-certificates curl -y
+
+      for pkg in docker.io docker-doc docker-compose docker-compose-v2 podman-docker containerd runc; do sudo apt-get remove $pkg; done
+
+      sudo install -m 0755 -d /etc/apt/keyrings
+      sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+      sudo chmod a+r /etc/apt/keyrings/docker.asc
+
+      echo \
+          "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+          $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+          sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+      sudo apt-get update -y
+      sudo apt-get install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin -y
+
+      sudo systemctl enable docker
+    SHELL
+  end
+end
